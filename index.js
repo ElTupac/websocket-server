@@ -1,14 +1,14 @@
 require("dotenv").config();
 
-const jwt = require("jsonwebtoken");
-const { JWT_SECRET } = process.env;
-
 const http = require("http");
-const WebSocketServer = require("ws").Server;
 const express = require("express");
 const cors = require("cors");
 const routes = require("./src/routes");
+const User = require("./src/models/User");
 const PORT = +process.env.PORT || 3001;
+
+// Only for storing references, not use directly or caoul lead in performances issues
+const usersControllers = [new User("Jorge")];
 
 const app = express();
 app.use(cors());
@@ -18,51 +18,17 @@ app.use("/", routes);
 const server = http.createServer(app);
 
 try {
-  const wss = new WebSocketServer({
-    server,
-  });
-
-  wss.on("connection", (ws) => {
-    let authenticationStep = "no_authenticated";
-
-    let counter = 0;
-    const messageFunction = () =>
-      setTimeout(() => {
-        ws.send(`Un mensaje para ${authenticationStep}, numero: ${counter}`);
-        if (counter < 10) {
-          counter++;
-          messageFunction();
-        } else ws.close(1000);
-      }, 2000);
-
-    ws.on("message", (data) => {
-      const message = new String(data);
-      switch (authenticationStep) {
-        case "no_authenticated":
-          try {
-            const { token } = JSON.parse(message);
-            jwt.verify(token, JWT_SECRET, (err, decoded) => {
-              if (err) ws.close(3000, "Unauthorized");
-              else {
-                authenticationStep = decoded.username;
-                ws.send("authenticate_ok");
-                messageFunction();
-              }
-            });
-          } catch (error) {
-            ws.close(3000, "Unauthorized");
-          }
-          break;
-        default:
-          console.log(authenticationStep);
-          console.log("Message: %s", message);
-      }
-    });
-    ws.on("close", (code, reason) => {
-      console.log("Closed because: %s", reason);
-      console.log("Close code: ", code);
-    });
-    ws.send("authenticate");
+  require("./src/websocket")(server, {
+    onNewUser: (user) => {
+      user.subscribeInvites((inviteTo, { accept, reject, notFound }) => {
+        const foundUser = usersControllers.find((userObject) =>
+          userObject.isThisUser(inviteTo)
+        );
+        if (foundUser) accept();
+        else notFound();
+      });
+      usersControllers.push(user);
+    },
   });
 } catch (error) {
   console.error("There was a problem setting the web socket");
