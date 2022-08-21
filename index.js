@@ -24,7 +24,8 @@ try {
         const foundUser = usersControllers.find((userObject) =>
           userObject.isThisUser(inviteTo)
         );
-        if (foundUser) accept();
+        if (foundUser)
+          foundUser.receiveInvite(user.fullName, { accept, reject });
         else notFound();
       });
       usersControllers.push(user);

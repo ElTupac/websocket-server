@@ -20,17 +20,56 @@ class User {
   assignWebsocket(websocket) {
     this.websocket = websocket;
     websocket.send("authenticate_ok");
+    this.listeners = {
+      invite: {
+        send: (data) => {
+          this.sendInvite(data.to);
+        },
+        pending: [],
+      },
+    };
   }
-  newMessage(message) {
-    console.log("Message in object: %s", message);
-    const [action, value] = message.split("--");
-    switch (action) {
-      case "invite":
-        this.sendInvite(value);
+
+  addListener(action, value, { func, match }) {
+    if (this.listeners[action] && this.listeners[action][value]) {
+      if (Array.isArray(this.listeners[action][value]))
+        this.listeners[action][value].push({ func, match });
+      else this.listeners[action][value] = func;
+    } else {
+      this.listeners[action][value] = func;
     }
   }
 
-  receiveInvite(from) {}
+  async removeListener(action, value, { match }) {
+    if (this.listeners[action] && this.listeners[action][value]) {
+      if (Array.isArray(this.listeners[action][value])) {
+        const newListenersArray = this.listeners[action][value];
+        this.listeners[action][value] = newListenersArray.filter(
+          (element) => element.match !== match
+        );
+      } else delete this.listeners[action][value];
+    }
+  }
+
+  newMessage(message) {
+    const [action, value, data] = message.split("--");
+    if (this.listeners[action] && this.listeners[action][value])
+      switch (typeof this.listeners[action][value]) {
+        case "function":
+          this.listeners[action][value](JSON.parse(data));
+          break;
+        case "undefined":
+          break;
+        default:
+          if (Array.isArray(this.listeners[action][value]))
+            this.listeners[action][value].map(({ match, func }) => {
+              const { query } = JSON.parse(data);
+              if (query === match && typeof func === "function")
+                resolver(JSON.parse(data));
+            });
+      }
+  }
+
   createRoom() {}
   assignRoom() {}
 
@@ -50,13 +89,25 @@ class User {
       });
   }
   inviteUserNotFound(fullName) {
-    console.log("%s not found online", fullName);
+    this.websocket.send(`invite--fail--${JSON.stringify({ to: fullName })}`);
   }
   inviteAccepted(from) {
-    console.log("%s accepted your invite", from);
+    this.websocket.send(`invite--accepted--${JSON.stringify({ from })}`);
   }
   inviteDeclined(from) {
-    console.log("%s declined your invite", from);
+    this.websocket.send(`invite--declined--${JSON.stringify({ from })}`);
+  }
+  receiveInvite(from, { accept, reject }) {
+    this.websocket.send(`invite--received--${JSON.stringify({ from })}`);
+    this.addListener("invite", "pending", {
+      match: from,
+      func: ({ response }) => {
+        if (response) accept();
+        else reject();
+
+        this.removeListener("invite", "pending", { match: from });
+      },
+    });
   }
 }
 
