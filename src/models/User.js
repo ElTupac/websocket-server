@@ -14,7 +14,10 @@ class User {
   constructor(username, websocket) {
     Object.assign(this, userInitialization(username));
     console.log("Created user: %s", this.fullName);
-    if (websocket) this.assignWebsocket(websocket);
+    if (websocket) {
+      this.assignWebsocket(websocket);
+      websocket.send(`info--fullName--${this.fullName}`);
+    }
   }
 
   assignWebsocket(websocket) {
